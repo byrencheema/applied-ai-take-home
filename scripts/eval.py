@@ -18,7 +18,6 @@ from src.agent import build_agent
 load_dotenv()
 
 MAX_WORKERS = 7
-AGENT = build_agent()
 
 
 @dataclass
@@ -54,7 +53,8 @@ def score(answer: str, case: dict) -> tuple[list[str], list[str]]:
 def run_case(case: dict) -> Result:
     start = time.time()
     try:
-        out = AGENT.invoke(
+        agent = build_agent()
+        out = agent.invoke(
             {"messages": [{"role": "user", "content": case["question"]}]},
             config={"configurable": {"thread_id": case["id"]}},
         )
