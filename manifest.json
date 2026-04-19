@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "Northstar QA Bot",
-    "description": "Ask questions about Northstar customers — tickets, calls, internal docs, competitor research.",
+    "description": "Ask questions about Northstar customers: tickets, calls, internal docs, competitor research.",
     "background_color": "#1f2d3d"
   },
   "features": {

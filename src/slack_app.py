@@ -94,7 +94,7 @@ def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = No
         elif node == "answer":
             final = chunk["answer"]["messages"][-1].content
 
-    return final or "Sorry — I couldn't produce an answer."
+    return final or "Sorry, I couldn't produce an answer."
 
 
 def _feedback_blocks(thread_key: str) -> list[dict[str, Any]]:
@@ -134,7 +134,7 @@ def _answer(
         answer = _run_agent(question, key, set_status=set_status)
     except Exception:
         logger.exception("agent error for thread %s", key)
-        say(text="Sorry — something broke while I was researching that.", thread_ts=thread_ts)
+        say(text="Sorry, something broke while I was researching that.", thread_ts=thread_ts)
         return
 
     say(
