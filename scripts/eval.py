@@ -13,10 +13,12 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 from evals.cases import CASES
+from src.agent import build_agent
 
 load_dotenv()
 
 MAX_WORKERS = 7
+AGENT = build_agent()
 
 
 @dataclass
@@ -50,12 +52,9 @@ def score(answer: str, case: dict) -> tuple[list[str], list[str]]:
 
 
 def run_case(case: dict) -> Result:
-    from src.agent import build_agent
-
     start = time.time()
     try:
-        agent = build_agent()
-        out = agent.invoke(
+        out = AGENT.invoke(
             {"messages": [{"role": "user", "content": case["question"]}]},
             config={"configurable": {"thread_id": case["id"]}},
         )

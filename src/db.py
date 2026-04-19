@@ -31,20 +31,20 @@ class _ConnProxy:
 conn = _ConnProxy()
 
 
-def resolve_customer(name: str):
-    """Return (customer_id, canonical_name) for a fuzzy name match, else None."""
-    name = name.strip()
-    if not name:
+def resolve_customer(name_or_id: str):
+    """Return (customer_id, canonical_name) for an id, exact name, or single fuzzy match, else None."""
+    name_or_id = name_or_id.strip()
+    if not name_or_id:
         return None
     row = conn.execute(
-        "SELECT customer_id, name FROM customers WHERE lower(name) = lower(?)",
-        (name,),
+        "SELECT customer_id, name FROM customers WHERE customer_id = ? OR lower(name) = lower(?)",
+        (name_or_id, name_or_id),
     ).fetchone()
     if row:
         return row["customer_id"], row["name"]
     rows = conn.execute(
         "SELECT customer_id, name FROM customers WHERE lower(name) LIKE lower(?) ORDER BY name",
-        (f"%{name}%",),
+        (f"%{name_or_id}%",),
     ).fetchall()
     if len(rows) == 1:
         return rows[0]["customer_id"], rows[0]["name"]

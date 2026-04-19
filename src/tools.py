@@ -32,6 +32,7 @@ REGIONS = {"Canada", "Nordics", "ANZ", "North America West"}
 HEALTH_STATES = {"at risk", "watch list", "recovering", "healthy", "expanding"}
 MAX_LIMIT = 10
 PER_CUSTOMER_CAP = 2
+OVERFETCH_ROWS = MAX_LIMIT * 10
 
 
 @tool(parse_docstring=True)
@@ -85,9 +86,8 @@ def search_artifacts(
     if customer_id:
         sql += " AND a.customer_id = ?"
         params.append(customer_id)
-    # Over-fetch so per-customer capping has room to diversify.
     sql += " ORDER BY bm25(artifacts_fts) LIMIT ?"
-    params.append(MAX_LIMIT * 10)
+    params.append(OVERFETCH_ROWS)  # over-fetch so per-customer capping has room to diversify
 
     try:
         raw = conn.execute(sql, params).fetchall()
@@ -231,23 +231,12 @@ def get_customer(name_or_id: str) -> str:
     Args:
         name_or_id: Customer name (fuzzy match, e.g. "BlueHarbor") or customer_id (e.g. "cust_...").
     """
-    customer_id = None
-    if name_or_id.startswith("cust_"):
-        row = conn.execute(
-            "SELECT customer_id FROM customers WHERE customer_id = ?",
-            (name_or_id,),
-        ).fetchone()
-        if row:
-            customer_id = row["customer_id"]
-    else:
-        resolved = resolve_customer(name_or_id)
-        if resolved:
-            customer_id, _ = resolved
-
-    if not customer_id:
+    resolved = resolve_customer(name_or_id)
+    if not resolved:
         hints = customer_suggestions(name_or_id)
         hint_str = f" Closest: {', '.join(hints)}." if hints else ""
         return f"No customer matches {name_or_id!r}.{hint_str} Call list_customers to enumerate."
+    customer_id, _ = resolved
 
     row = conn.execute(
         """

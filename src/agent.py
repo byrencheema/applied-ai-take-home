@@ -7,9 +7,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent
 
-from .tools import get_artifact, get_customer, list_customers, search_artifacts
-
-ALL_TOOLS = [search_artifacts, get_artifact, list_customers, get_customer]
+from .tools import TOOLS, list_customers, search_artifacts
 
 PLAN_SYSTEM = """You are the planner. Given the user's question, write a short numbered plan for answering it.
 
@@ -52,10 +50,14 @@ class State(TypedDict):
 
 def build_agent(model: str = "gpt-4.1"):
     llm = ChatOpenAI(model=model, temperature=0)
-    llm_tools = llm.bind_tools(ALL_TOOLS, parallel_tool_calls=False)
+    llm_tools = llm.bind_tools(TOOLS, parallel_tool_calls=False)
     plan_agent = create_react_agent(
         model=llm, tools=[list_customers, search_artifacts], prompt=PLAN_SYSTEM
     )
+
+    def _framed(system_text: str, state: State) -> list:
+        sys = SystemMessage(f"{system_text}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}")
+        return [sys, *state["messages"]]
 
     def plan_node(state: State) -> dict:
         q = state["messages"][-1].content
@@ -63,18 +65,10 @@ def build_agent(model: str = "gpt-4.1"):
         return {"plan": out["messages"][-1].content, "question": q}
 
     def research_node(state: State) -> dict:
-        sys = SystemMessage(
-            f"{RESEARCH_SYSTEM}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}"
-        )
-        msgs = [sys, *state["messages"]]
-        return {"messages": [llm_tools.invoke(msgs)]}
+        return {"messages": [llm_tools.invoke(_framed(RESEARCH_SYSTEM, state))]}
 
     def synthesize_node(state: State) -> dict:
-        sys = SystemMessage(
-            f"{SYNTHESIZE_SYSTEM}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}"
-        )
-        msgs = [sys, *state["messages"]]
-        return {"messages": [llm.invoke(msgs)]}
+        return {"messages": [llm.invoke(_framed(SYNTHESIZE_SYSTEM, state))]}
 
     def route(state: State) -> str:
         last = state["messages"][-1]
@@ -83,7 +77,7 @@ def build_agent(model: str = "gpt-4.1"):
     g = StateGraph(State)
     g.add_node("plan", plan_node)
     g.add_node("research", research_node)
-    g.add_node("tools", ToolNode(ALL_TOOLS))
+    g.add_node("tools", ToolNode(TOOLS))
     g.add_node("synthesize", synthesize_node)
     g.add_edge(START, "plan")
     g.add_edge("plan", "research")
