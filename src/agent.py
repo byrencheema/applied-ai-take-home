@@ -56,9 +56,7 @@ SCHEMA_REFERENCE = """# Database reference
 - `get_customer` and `list_customers` are the ONLY sources of account_health, region, industry — these don't appear in artifact content reliably.
 """
 
-PLAN_SYSTEM = f"""You are the planner. Look at the type of the user's question and come up with a good plan for how to search — implicitly, not explicitly. Sketch the strategic ordering: first we should do this, then we should do this, then we should do this. Don't name specific tool calls or customer names. Just the shape of the approach, grounded in how the data is actually structured:
-
-{SCHEMA_REFERENCE}
+PLAN_PROMPT = """You are the planner. Look at the type of the user's question and come up with a good plan for how to search — implicitly, not explicitly. Sketch the strategic ordering: first we should do this, then we should do this, then we should do this. Don't name specific tool calls or customer names. Just the shape of the approach.
 
 Recognize the query type and let that dictate the plan:
 - Single-target lookup ("for customer X, what is Y")
@@ -68,7 +66,7 @@ Recognize the query type and let that dictate the plan:
 
 Output only a short numbered plan. Do not answer the question."""
 
-RESEARCH_SYSTEM = f"""You gather evidence to execute the plan below. You know this data deeply — here is the schema and content reference:
+RESEARCH_PROMPT = f"""You gather evidence to execute the plan below. You know this data deeply — here is the schema and content reference:
 
 {SCHEMA_REFERENCE}
 
@@ -88,12 +86,11 @@ Rules:
 - Never output a customer name, date, command, or artifact_id that did not come back from a tool.
 - Stop calling tools only when every plan step is backed by retrieved text AND you've weighed every plausible candidate."""
 
-SYNTHESIZE_SYSTEM = """Produce the final answer to the user's question, using the plan and the retrieved evidence in the conversation.
+ANSWER_PROMPT = """Produce the final answer to the user's question, using the plan and the retrieved evidence in the conversation.
 
 - Ground every claim in the retrieved tool results.
 - Cite the artifact_id(s) you used.
 - Name the specific Northstar product(s) involved when they appear in evidence (Event Nexus, Orchestrator, Signal Ingest, Signal Insights).
-- Preserve quantitative commitments verbatim from the source artifacts — day ranges like "7-10", percentages like "80%", named scopes like "top 20" — do not paraphrase them into "about a week" or "most of the top searches".
 - For superlatives, pick ONE best candidate and justify with concrete evidence.
 - For enumerations, list every matching customer and state the shared pattern in plain English.
 - If the evidence is incomplete, say exactly what is missing rather than guessing."""
@@ -105,37 +102,37 @@ class State(TypedDict):
     question: str
 
 
-def build_agent(model: str = "gpt-4.1"):
-    llm = ChatOpenAI(model=model, temperature=0)
+def build_agent(model: str = "gpt-4.1", temperature: float = 0.5):
+    llm = ChatOpenAI(model=model, temperature=temperature)
     llm_tools = llm.bind_tools(TOOLS, parallel_tool_calls=False)
 
-    def _framed(system_text: str, state: State) -> list:
-        sys = SystemMessage(f"{system_text}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}")
+    def _framed(prompt: str, state: State) -> list:
+        sys = SystemMessage(f"{prompt}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}")
         return [sys, *state["messages"]]
 
-    def plan_node(state: State) -> dict:
+    def plan(state: State) -> dict:
         q = state["messages"][-1].content
-        out = llm.invoke([SystemMessage(PLAN_SYSTEM), HumanMessage(q)])
+        out = llm.invoke([SystemMessage(PLAN_PROMPT), HumanMessage(q)])
         return {"plan": out.content, "question": q}
 
-    def research_node(state: State) -> dict:
-        return {"messages": [llm_tools.invoke(_framed(RESEARCH_SYSTEM, state))]}
+    def research(state: State) -> dict:
+        return {"messages": [llm_tools.invoke(_framed(RESEARCH_PROMPT, state))]}
 
-    def synthesize_node(state: State) -> dict:
-        return {"messages": [llm.invoke(_framed(SYNTHESIZE_SYSTEM, state))]}
+    def answer(state: State) -> dict:
+        return {"messages": [llm.invoke(_framed(ANSWER_PROMPT, state))]}
 
     def route(state: State) -> str:
         last = state["messages"][-1]
-        return "tools" if getattr(last, "tool_calls", None) else "synthesize"
+        return "tools" if getattr(last, "tool_calls", None) else "answer"
 
     g = StateGraph(State)
-    g.add_node("plan", plan_node)
-    g.add_node("research", research_node)
+    g.add_node("plan", plan)
+    g.add_node("research", research)
     g.add_node("tools", ToolNode(TOOLS))
-    g.add_node("synthesize", synthesize_node)
+    g.add_node("answer", answer)
     g.add_edge(START, "plan")
     g.add_edge("plan", "research")
-    g.add_conditional_edges("research", route, {"tools": "tools", "synthesize": "synthesize"})
+    g.add_conditional_edges("research", route, {"tools": "tools", "answer": "answer"})
     g.add_edge("tools", "research")
-    g.add_edge("synthesize", END)
+    g.add_edge("answer", END)
     return g.compile(checkpointer=InMemorySaver())
