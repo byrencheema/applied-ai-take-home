@@ -1,0 +1,74 @@
+{
+  "display_information": {
+    "name": "Northstar QA Bot",
+    "description": "Ask questions about Northstar customers — tickets, calls, internal docs, competitor research.",
+    "background_color": "#1f2d3d"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "Northstar QA",
+      "always_online": true
+    },
+    "assistant_view": {
+      "assistant_description": "Research assistant over Northstar customer artifacts.",
+      "suggested_prompts": [
+        {
+          "title": "BlueHarbor proof plan",
+          "message": "Which customer's issue started after the 2026-02-20 taxonomy rollout, and what proof plan did we propose to get them comfortable with renewal?"
+        },
+        {
+          "title": "Verdant Bay rollback",
+          "message": "For Verdant Bay, what's the approved live patch window, and exactly how do we roll back if the validation checks fail?"
+        },
+        {
+          "title": "NA West cohort",
+          "message": "Among the North America West Event Nexus accounts, which ones are really dealing with taxonomy/search semantics problems versus duplicate-action problems?"
+        },
+        {
+          "title": "Canada bypass pattern",
+          "message": "Do we have a recurring Canada approval-bypass pattern across accounts, or is MapleBridge basically a one-off?"
+        }
+      ]
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "assistant:write",
+        "channels:history",
+        "chat:write",
+        "commands",
+        "groups:history",
+        "im:history",
+        "im:read",
+        "im:write",
+        "mpim:history",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "assistant_thread_started",
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

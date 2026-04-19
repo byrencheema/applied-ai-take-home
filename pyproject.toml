@@ -7,6 +7,7 @@ dependencies = [
     "langgraph>=1.1.8,<2.0",
     "langchain-openai>=1.1,<2.0",
     "python-dotenv>=1.0",
+    "slack-bolt>=1.21",
 ]
 
 [project.optional-dependencies]
