@@ -18,7 +18,7 @@ cp .env.example .env   # then fill in the tokens
 uv run python -m scripts.run_slack        # Slack bot (Socket Mode)
 uv run python -m scripts.ask              # local REPL, no Slack
 uv run python -m scripts.ask "question"   # one-shot
-uv run python -m scripts.eval             # 7-case eval
+uv run python -m evals.eval               # eval suite (logs to evals/runs/)
 uv run pytest                             # unit tests
 ```
 
@@ -38,4 +38,4 @@ Socket Mode.
 - `src/tools.py`: FTS5 search, artifact fetch, customer enumerate/profile.
 - `src/slack_app.py`: Bolt handlers.
 - `scripts/run_slack.py`: Socket Mode entry.
-- `evals/cases.py` + `scripts/eval.py`: 7-case eval.
+- `evals/cases.py` + `evals/eval.py`: eval harness. Runs written to `evals/runs/` (gitignored).
