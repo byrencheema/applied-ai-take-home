@@ -9,13 +9,20 @@ import logging
 import os
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from src.slack_app import build_slack_app
 
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
 
 
 def main() -> None:

@@ -8,6 +8,7 @@ dependencies = [
     "langchain-openai>=1.1,<2.0",
     "python-dotenv>=1.0",
     "slack-bolt>=1.21",
+    "slackify-markdown>=0.2.2",
 ]
 
 [project.optional-dependencies]

@@ -12,10 +12,13 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
+from langchain_core.messages import AIMessage
 from slack_bolt import App, Assistant, SetStatus, SetSuggestedPrompts, Say
 from slack_sdk import WebClient
+from slackify_markdown import slackify_markdown
 
 from .agent import build_agent
 
@@ -75,26 +78,67 @@ def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = No
     inputs = {"messages": [{"role": "user", "content": question}]}
     tool_count = 0
     final: str | None = None
+    logger.info("[%s] question: %s", thread_key, question)
+    t0 = time.perf_counter()
 
     for chunk in AGENT.stream(inputs, config=cfg, stream_mode="updates"):
-        node = next(iter(chunk))
+        node, update = next(iter(chunk.items()))
         if node == "plan" and set_status:
             set_status("Planning the approach...")
-        elif node == "research" and set_status:
-            last = chunk["research"]["messages"][-1]
-            if getattr(last, "tool_calls", None):
-                call = last.tool_calls[0]
-                set_status(f"Calling {call['name']}...")
-            else:
+        elif node == "research":
+            last = update["messages"][-1]
+            calls = getattr(last, "tool_calls", None) or []
+            if calls and set_status:
+                names = ", ".join(c["name"] for c in calls)
+                set_status(f"Calling {names}...")
+            elif set_status:
                 set_status("Drafting findings...")
         elif node == "tools":
-            tool_count += len(chunk["tools"]["messages"])
+            tool_count += len(update["messages"])
             if set_status:
                 set_status(f"Reading evidence ({tool_count} artifact(s))...")
         elif node == "answer":
-            final = chunk["answer"]["messages"][-1].content
+            final = update["messages"][-1].content
+            final_state = update
 
+    elapsed = time.perf_counter() - t0
+    in_tok, out_tok = _token_totals(thread_key)
+    logger.info(
+        "[%s] done in %.1fs · %d tool call(s) · %d in / %d out tokens · %d chars",
+        thread_key, elapsed, tool_count, in_tok, out_tok, len(final or ""),
+    )
     return final or "Sorry, I couldn't produce an answer."
+
+
+def _token_totals(thread_key: str) -> tuple[int, int]:
+    """Sum usage_metadata across AIMessages in the checkpointed state."""
+    state = AGENT.get_state({"configurable": {"thread_id": thread_key}})
+    in_tok = out_tok = 0
+    for m in state.values.get("messages", []):
+        if isinstance(m, AIMessage) and getattr(m, "usage_metadata", None):
+            in_tok += m.usage_metadata.get("input_tokens", 0)
+            out_tok += m.usage_metadata.get("output_tokens", 0)
+    return in_tok, out_tok
+
+
+SECTION_LIMIT = 2900
+
+
+def _section_blocks(text: str) -> list[dict[str, Any]]:
+    """Split text into section blocks under Slack's 3000-char section limit."""
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > SECTION_LIMIT:
+        cut = remaining.rfind("\n", 0, SECTION_LIMIT)
+        if cut == -1:
+            cut = remaining.rfind(" ", 0, SECTION_LIMIT)
+        if cut == -1:
+            cut = SECTION_LIMIT
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": c}} for c in chunks]
 
 
 def _feedback_blocks(thread_key: str) -> list[dict[str, Any]]:
@@ -137,13 +181,11 @@ def _answer(
         say(text="Sorry, something broke while I was researching that.", thread_ts=thread_ts)
         return
 
+    formatted = slackify_markdown(answer)
     say(
         text=answer,
         thread_ts=thread_ts,
-        blocks=[
-            {"type": "section", "text": {"type": "mrkdwn", "text": answer}},
-            *_feedback_blocks(key),
-        ],
+        blocks=[*_section_blocks(formatted), *_feedback_blocks(key)],
     )
 
 
