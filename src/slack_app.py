@@ -15,7 +15,7 @@ import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.messages import AIMessage
 from slack_bolt import App, Assistant, SetStatus, SetSuggestedPrompts, Say
@@ -70,11 +70,25 @@ def _clean_text(text: str) -> str:
     return MENTION_RE.sub("", text or "").strip()
 
 
-def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = None) -> str:
+TOOL_STATUS = {
+    "search_artifacts": "Searching artifacts",
+    "get_artifact": "Reading an artifact",
+    "list_customers": "Listing customers",
+    "get_customer": "Looking up a customer",
+}
+
+
+def _run_agent(
+    question: str,
+    thread_key: str,
+    set_status: SetStatus | None = None,
+    on_token: "Callable[[str], None] | None" = None,
+) -> str:
     """Drive the LangGraph agent, nudging set_status as nodes complete.
 
-    stream_mode="updates" fires once per node; we map each to a user-visible status.
-    Typical run: plan → research (→ tools → research)* → answer, ~5-15 events.
+    Uses stream_mode=["updates", "messages"] so we can both (a) react to node
+    transitions for status text and (b) forward LLM tokens from the answer node
+    to an optional on_token callback (used for chat.appendStream streaming).
     """
     cfg = {"configurable": {"thread_id": thread_key}}
     inputs = {"messages": [{"role": "user", "content": question}]}
@@ -83,16 +97,31 @@ def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = No
     logger.info("[%s] question: %s", thread_key, question)
     t0 = time.perf_counter()
 
-    for chunk in AGENT.stream(inputs, config=cfg, stream_mode="updates"):
-        node, update = next(iter(chunk.items()))
-        if node == "plan" and set_status:
-            set_status("Planning...")
-        elif node == "tools":
-            tool_count += len(update["messages"])
-        elif node == "answer":
-            if set_status:
-                set_status("Writing answer...")
-            final = update["messages"][-1].content
+    for mode, payload in AGENT.stream(inputs, config=cfg, stream_mode=["updates", "messages"]):
+        if mode == "updates":
+            node, update = next(iter(payload.items()))
+            if node == "plan" and set_status:
+                set_status("Planning the investigation...")
+            elif node == "research" and set_status:
+                last = update["messages"][-1]
+                calls = getattr(last, "tool_calls", None) or []
+                if calls:
+                    names = {TOOL_STATUS.get(c["name"], c["name"]) for c in calls}
+                    set_status(", ".join(sorted(names)) + "...")
+            elif node == "tools":
+                tool_count += len(update["messages"])
+                if set_status:
+                    set_status("Reading results...")
+            elif node == "answer":
+                if set_status:
+                    set_status("Writing the answer...")
+                final = update["messages"][-1].content
+        elif mode == "messages" and on_token:
+            msg_chunk, metadata = payload
+            if metadata.get("langgraph_node") == "answer":
+                text = getattr(msg_chunk, "content", "") or ""
+                if text:
+                    on_token(text)
 
     elapsed = time.perf_counter() - t0
     in_tok, out_tok = _token_totals(thread_key)
@@ -172,29 +201,70 @@ def _answer(
     question: str,
     channel: str,
     thread_ts: str,
+    team_id: str | None,
+    user_id: str | None,
     say: Say,
     client: WebClient,
     set_status: SetStatus | None = None,
     react_ts: str | None = None,
 ) -> None:
+    """Stream the reply via chat.appendStream so Slack's default 'Gathering
+    information...' bubble is displaced by our own message as it generates.
+    Falls back to say() if streaming cannot start (missing team/user id)."""
     key = _thread_key(channel, thread_ts)
     if react_ts:
         _react(client, channel, react_ts, "eyes", add=True)
+
+    streamer = None
+    if team_id and user_id:
+        try:
+            streamer = client.chat_stream(
+                channel=channel,
+                thread_ts=thread_ts,
+                recipient_team_id=team_id,
+                recipient_user_id=user_id,
+            )
+        except Exception:
+            logger.exception("chat_stream start failed for thread %s", key)
+            streamer = None
+
+    def on_token(text: str) -> None:
+        if streamer:
+            try:
+                streamer.append(markdown_text=text)
+            except Exception:
+                logger.exception("chat_stream append failed for thread %s", key)
+
     try:
-        answer = _run_agent(question, key, set_status=set_status)
+        answer = _run_agent(
+            question, key,
+            set_status=set_status,
+            on_token=on_token if streamer else None,
+        )
     except Exception:
         logger.exception("agent error for thread %s", key)
+        if streamer:
+            try:
+                streamer.stop()
+            except Exception:
+                logger.exception("chat_stream stop after error failed")
         if react_ts:
             _react(client, channel, react_ts, "eyes", add=False)
         say(text="Sorry, something broke while I was researching that.", thread_ts=thread_ts)
         return
 
-    formatted = slackify_markdown(answer)
-    say(
-        text=answer,
-        thread_ts=thread_ts,
-        blocks=[*_section_blocks(formatted), *_feedback_blocks(key)],
-    )
+    if streamer:
+        try:
+            streamer.stop(blocks=_feedback_blocks(key))
+        except Exception:
+            logger.exception("chat_stream stop failed for thread %s", key)
+    else:
+        formatted = slackify_markdown(answer)
+        say(
+            text=answer,
+            thread_ts=thread_ts,
+            blocks=[*_section_blocks(formatted), *_feedback_blocks(key)],
+        )
     if react_ts:
         _react(client, channel, react_ts, "eyes", add=False)
 
@@ -223,6 +293,8 @@ def build_slack_app() -> App:
             question=_clean_text(payload.get("text", "")),
             channel=channel,
             thread_ts=thread_ts,
+            team_id=payload.get("team"),
+            user_id=payload.get("user"),
             say=say,
             client=client,
             set_status=set_status,
@@ -242,6 +314,8 @@ def build_slack_app() -> App:
             question=text,
             channel=channel,
             thread_ts=thread_ts,
+            team_id=event.get("team"),
+            user_id=event.get("user"),
             say=say,
             client=client,
             react_ts=event["ts"],
@@ -271,6 +345,8 @@ def build_slack_app() -> App:
                 question=_clean_text(text),
                 channel=channel,
                 thread_ts=thread_ts,
+                team_id=event.get("team"),
+                user_id=event.get("user"),
                 say=say,
                 client=client,
             )
@@ -288,6 +364,8 @@ def build_slack_app() -> App:
             question=_clean_text(text),
             channel=channel,
             thread_ts=thread_ts,
+            team_id=event.get("team"),
+            user_id=event.get("user"),
             say=say,
             client=client,
             react_ts=event["ts"],
