@@ -99,7 +99,6 @@ def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = No
                 set_status(f"Reading evidence ({tool_count} artifact(s))...")
         elif node == "answer":
             final = update["messages"][-1].content
-            final_state = update
 
     elapsed = time.perf_counter() - t0
     in_tok, out_tok = _token_totals(thread_key)

@@ -15,7 +15,14 @@ CASES = [
             "which customer's issue started after the 2026-02-20 taxonomy rollout, "
             "and what proof plan did we propose to get them comfortable with renewal?"
         ),
-        "must_include": ["BlueHarbor", "7-10", "index weighting", "mapping layer", "top 20", "80"],
+        "must_include": [
+            "BlueHarbor",
+            "7-10",
+            "index weighting",
+            ("mapping layer", "taxonomy mapping", "mapping rules"),
+            "top 20",
+            ("80%", "80 percent"),
+        ],
     },
     {
         "id": "Q2_verdant_bay_rollback",
@@ -54,7 +61,13 @@ CASES = [
             "which customer looks most likely to defect to a cheaper tactical competitor "
             "if we miss the next promised milestone, and what exactly is that milestone?"
         ),
-        "must_include": ["BlueHarbor", "NoiseGuard", "7-10", "80", "top 20"],
+        "must_include": [
+            "BlueHarbor",
+            "NoiseGuard",
+            "7-10",
+            ("80%", "80 percent"),
+            "top 20",
+        ],
     },
     {
         "id": "H2_na_west_cohort",
@@ -70,6 +83,15 @@ CASES = [
             "Helix Assemblies", "LedgerBright", "LedgerPeak",
             "MedLogix", "Peregrine", "Pioneer Grid Retail",
         ],
+    },
+    {
+        "id": "Z1_out_of_scope",
+        "question": "what's the weather like in Tokyo today?",
+        "must_include": [
+            ("outside", "don't cover", "can't help", "only help", "not something"),
+            ("Northstar", "customer accounts"),
+        ],
+        "must_not_include": ["Tokyo", "art_", "cus_"],
     },
     {
         "id": "H3_canada_bypass_pattern",
