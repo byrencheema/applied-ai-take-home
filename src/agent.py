@@ -1,6 +1,6 @@
 from typing import Annotated, TypedDict
 
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -123,7 +123,7 @@ class State(TypedDict):
     question: str
 
 
-def build_agent(model: str = "gpt-4.1", temperature: float = 0.5):
+def build_agent(model: str = "gpt-4.1", temperature: float = 0.3):
     llm = ChatOpenAI(model=model, temperature=temperature)
     llm_tools = llm.bind_tools(TOOLS, parallel_tool_calls=False)
 
@@ -132,9 +132,15 @@ def build_agent(model: str = "gpt-4.1", temperature: float = 0.5):
         return [sys, *state["messages"]]
 
     def plan(state: State) -> dict:
-        q = state["messages"][-1].content
-        out = llm.invoke([SystemMessage(PLAN_PROMPT), HumanMessage(q)])
-        return {"plan": out.content, "question": q}
+        msgs = state["messages"]
+        new_q = msgs[-1].content
+        prior = [
+            m for m in msgs[:-1]
+            if isinstance(m, HumanMessage)
+            or (isinstance(m, AIMessage) and m.content and not getattr(m, "tool_calls", None))
+        ]
+        out = llm.invoke([SystemMessage(PLAN_PROMPT), *prior, msgs[-1]])
+        return {"plan": out.content, "question": new_q}
 
     def research(state: State) -> dict:
         return {"messages": [llm_tools.invoke(_framed(RESEARCH_PROMPT, state))]}

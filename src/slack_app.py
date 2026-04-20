@@ -13,6 +13,8 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage
@@ -84,20 +86,12 @@ def _run_agent(question: str, thread_key: str, set_status: SetStatus | None = No
     for chunk in AGENT.stream(inputs, config=cfg, stream_mode="updates"):
         node, update = next(iter(chunk.items()))
         if node == "plan" and set_status:
-            set_status("Planning the approach...")
-        elif node == "research":
-            last = update["messages"][-1]
-            calls = getattr(last, "tool_calls", None) or []
-            if calls and set_status:
-                names = ", ".join(c["name"] for c in calls)
-                set_status(f"Calling {names}...")
-            elif set_status:
-                set_status("Drafting findings...")
+            set_status("Planning...")
         elif node == "tools":
             tool_count += len(update["messages"])
-            if set_status:
-                set_status(f"Reading evidence ({tool_count} artifact(s))...")
         elif node == "answer":
+            if set_status:
+                set_status("Writing answer...")
             final = update["messages"][-1].content
 
     elapsed = time.perf_counter() - t0
@@ -149,18 +143,28 @@ def _feedback_blocks(thread_key: str) -> list[dict[str, Any]]:
                 {
                     "type": "button",
                     "action_id": "feedback_up",
-                    "text": {"type": "plain_text", "text": "👍 Helpful"},
+                    "text": {"type": "plain_text", "text": "👍", "emoji": True},
                     "value": thread_key,
                 },
                 {
                     "type": "button",
                     "action_id": "feedback_down",
-                    "text": {"type": "plain_text", "text": "👎 Not helpful"},
+                    "text": {"type": "plain_text", "text": "👎", "emoji": True},
                     "value": thread_key,
                 },
             ],
         }
     ]
+
+
+def _react(client: WebClient, channel: str, ts: str, name: str, add: bool) -> None:
+    try:
+        if add:
+            client.reactions_add(channel=channel, timestamp=ts, name=name)
+        else:
+            client.reactions_remove(channel=channel, timestamp=ts, name=name)
+    except Exception as e:
+        logger.debug("reaction %s %s failed: %s", "add" if add else "remove", name, e)
 
 
 def _answer(
@@ -171,12 +175,17 @@ def _answer(
     say: Say,
     client: WebClient,
     set_status: SetStatus | None = None,
+    react_ts: str | None = None,
 ) -> None:
     key = _thread_key(channel, thread_ts)
+    if react_ts:
+        _react(client, channel, react_ts, "eyes", add=True)
     try:
         answer = _run_agent(question, key, set_status=set_status)
     except Exception:
         logger.exception("agent error for thread %s", key)
+        if react_ts:
+            _react(client, channel, react_ts, "eyes", add=False)
         say(text="Sorry, something broke while I was researching that.", thread_ts=thread_ts)
         return
 
@@ -186,10 +195,13 @@ def _answer(
         thread_ts=thread_ts,
         blocks=[*_section_blocks(formatted), *_feedback_blocks(key)],
     )
+    if react_ts:
+        _react(client, channel, react_ts, "eyes", add=False)
 
 
 def build_slack_app() -> App:
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
+    bot_user_id = app.client.auth_test()["user_id"]
 
     assistant = Assistant()
 
@@ -226,20 +238,77 @@ def build_slack_app() -> App:
         if not text:
             say(text="Ask me anything about Northstar customers.", thread_ts=thread_ts)
             return
-        _answer(question=text, channel=channel, thread_ts=thread_ts, say=say, client=client)
+        _answer(
+            question=text,
+            channel=channel,
+            thread_ts=thread_ts,
+            say=say,
+            client=client,
+            react_ts=event["ts"],
+        )
 
     @app.event("message")
-    def on_message(event: dict[str, Any]) -> None:
-        # Assistant.user_message already handles assistant-thread DMs. This
-        # catch-all just swallows other message events so Bolt doesn't warn.
-        if event.get("bot_id") or event.get("subtype") == "bot_message":
+    def on_message(event: dict[str, Any], say: Say, client: WebClient) -> None:
+        subtype = event.get("subtype")
+        channel_type = event.get("channel_type")
+        logger.info(
+            "message event: channel_type=%s subtype=%s thread_ts=%s text=%r",
+            channel_type, subtype, event.get("thread_ts"), (event.get("text") or "")[:80],
+        )
+        if event.get("bot_id") or subtype:
             return
+        text = event.get("text", "")
+        if f"<@{bot_user_id}>" in text:
+            return  # app_mention handler owns this
+
+        channel = event["channel"]
+        thread_ts = event.get("thread_ts")
+
+        # Native 1:1 DM: answer every message, thread the replies under the first one.
+        if channel_type == "im":
+            thread_ts = thread_ts or event["ts"]
+            _answer(
+                question=_clean_text(text),
+                channel=channel,
+                thread_ts=thread_ts,
+                say=say,
+                client=client,
+            )
+            return
+
+        # Channel: only answer thread replies where we already have context.
+        if not thread_ts:
+            return
+        key = _thread_key(channel, thread_ts)
+        state = AGENT.get_state({"configurable": {"thread_id": key}})
+        if not state.values.get("messages"):
+            return
+
+        _answer(
+            question=_clean_text(text),
+            channel=channel,
+            thread_ts=thread_ts,
+            say=say,
+            client=client,
+            react_ts=event["ts"],
+        )
 
     @app.action(re.compile(r"feedback_(up|down)"))
     def on_feedback(ack, body: dict[str, Any]) -> None:
         ack()
         action = body["actions"][0]
-        logger.info("feedback %s for %s by %s", action["action_id"], action["value"], body["user"]["id"])
+        vote = "up" if action["action_id"].endswith("up") else "down"
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "user": body["user"]["id"],
+            "thread_key": action["value"],
+            "vote": vote,
+        }
+        path = Path("data/feedback.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as f:
+            f.write(json.dumps(record) + "\n")
+        logger.info("feedback %s recorded for %s", vote, action["value"])
 
     @app.error
     def on_error(error: Exception, body: dict[str, Any]) -> None:
