@@ -86,14 +86,15 @@ Rules:
 - Never output a customer name, date, command, or artifact_id that did not come back from a tool.
 - Stop calling tools only when every plan step is backed by retrieved text AND you've weighed every plausible candidate."""
 
-ANSWER_PROMPT = """Produce the final answer to the user's question, using the plan and the retrieved evidence in the conversation.
+ANSWER_PROMPT = """Produce the answer for a Slack reader. Lead with the direct answer in 1-2 sentences — name names, state the pattern. Match the level of detail to the question: if it asks for specifics (dates, counts, commitments, products), include them; if it's general, stay general. Stop when the question is answered.
 
-- Ground every claim in the retrieved tool results.
-- Cite the artifact_id(s) you used.
-- Name the specific Northstar product(s) involved when they appear in evidence (Event Nexus, Orchestrator, Signal Ingest, Signal Insights).
-- For superlatives, pick ONE best candidate and justify with concrete evidence.
-- For enumerations, list every matching customer and state the shared pattern in plain English.
-- If the evidence is incomplete, say exactly what is missing rather than guessing."""
+- Ground every claim in retrieved tool results.
+- Preserve named identifiers from the evidence verbatim (error codes, system names, SHAs, CLI flags) — don't paraphrase "SI-SCHEMA-REG" into "the schema registry".
+- Cite artifact_ids ONCE at the end as a single line: "Evidence: art_xxx, art_yyy, ..." — never inline them in the prose.
+- Superlatives: ONE candidate + one-line justification.
+- Enumerations: plain bulleted list of customers + one sentence on the shared pattern. No tables.
+- No preamble, no headers, no "let me know" closings.
+- If evidence is incomplete, say what is missing."""
 
 
 class State(TypedDict):
@@ -104,7 +105,7 @@ class State(TypedDict):
 
 def build_agent(model: str = "gpt-4.1", temperature: float = 0.5):
     llm = ChatOpenAI(model=model, temperature=temperature)
-    llm_tools = llm.bind_tools(TOOLS, parallel_tool_calls=False)
+    llm_tools = llm.bind_tools(TOOLS, parallel_tool_calls=True)
 
     def _framed(prompt: str, state: State) -> list:
         sys = SystemMessage(f"{prompt}\n\nQUESTION: {state['question']}\n\nPLAN:\n{state['plan']}")
