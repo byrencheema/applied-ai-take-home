@@ -6,8 +6,8 @@
 
 A Slack Q&A bot that answers questions grounded in a 50-customer SQLite knowledge base (support tickets, customer calls, internal comms, internal docs, competitor research). Built on LangGraph and slack-bolt.
 
-Design and reasoning: [DESIGN.md](DESIGN.md).
-Demo video: https://www.loom.com/share/a08b0c62c5324398ad0b78f79c8ff39f
+- Design and reasoning: [DESIGN.md](DESIGN.md)
+- Demo video: https://www.loom.com/share/a08b0c62c5324398ad0b78f79c8ff39f
 
 ### Prerequisites
 
