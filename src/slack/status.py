@@ -52,7 +52,8 @@ class StatusMessage:
             logger.debug("chat.update (status) failed", exc_info=True)
 
     def finalize(self, answer_text: str, feedback_blocks: list[dict[str, Any]]) -> None:
-        formatted = slackify_markdown(answer_text)
+        paragraphs = [p.strip() for p in answer_text.split("\n\n") if p.strip()] or [answer_text]
+        formatted = "\n\n".join(slackify_markdown(p).rstrip() for p in paragraphs)
         blocks = [*section_blocks(formatted), *feedback_blocks]
         if self.ts:
             try:
