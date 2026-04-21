@@ -34,6 +34,8 @@ A Slack Q&A bot that answers questions grounded in a 50-customer SQLite knowledg
    - `SLACK_BOT_TOKEN` (`xoxb-...`)
    - `SLACK_APP_TOKEN` (`xapp-...`, Socket Mode)
 
+   Optional `SLACK_ALLOWED_USERS`: comma- or space-separated Slack user IDs (`U...`) allowed to use the bot. Empty or unset allows everyone.
+
 ### Slack app setup
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App > From an app manifest**.

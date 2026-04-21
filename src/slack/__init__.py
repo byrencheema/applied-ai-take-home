@@ -52,10 +52,25 @@ SUGGESTED_PROMPTS = [
 ]
 
 
+def _parse_allowed_users(raw: str | None) -> set[str]:
+    if not raw:
+        return set()
+    return {u.strip() for u in raw.replace(",", " ").split() if u.strip()}
+
+
 def build_slack_app() -> App:
     app = App(token=os.environ["SLACK_BOT_TOKEN"])
     bot_user_id = app.client.auth_test()["user_id"]
     logger.info("bot user id: %s", bot_user_id)
+
+    allowed_users = _parse_allowed_users(os.environ.get("SLACK_ALLOWED_USERS"))
+    if allowed_users:
+        logger.info("user whitelist active (%d users)", len(allowed_users))
+    else:
+        logger.info("user whitelist empty — allowing all users")
+
+    def is_allowed(user_id: str | None) -> bool:
+        return not allowed_users or (user_id in allowed_users)
 
     assistant = Assistant()
 
@@ -69,9 +84,18 @@ def build_slack_app() -> App:
     def on_user_message(payload: dict[str, Any], client: WebClient) -> None:
         channel = payload["channel"]
         thread_ts = payload.get("thread_ts") or payload["ts"]
+        user = payload.get("user")
         question = clean_text(payload.get("text", ""))
         logger.info("assistant msg · channel=%s thread=%s user=%s",
-                    channel, thread_ts, payload.get("user"))
+                    channel, thread_ts, user)
+        if not is_allowed(user):
+            logger.info("blocked assistant msg · user=%s not in whitelist", user)
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text="Sorry, you're not authorized to use Agent Orange.",
+            )
+            return
         set_assistant_title(client, channel, thread_ts, question)
         answer(question=question, channel=channel, thread_ts=thread_ts, client=client)
 
@@ -81,9 +105,18 @@ def build_slack_app() -> App:
     def on_mention(event: dict[str, Any], client: WebClient) -> None:
         channel = event["channel"]
         thread_ts = event.get("thread_ts") or event["ts"]
+        user = event.get("user")
         text = clean_text(event.get("text", ""))
         logger.info("app_mention · channel=%s thread=%s user=%s text=%r",
-                    channel, thread_ts, event.get("user"), text[:120])
+                    channel, thread_ts, user, text[:120])
+        if not is_allowed(user):
+            logger.info("blocked app_mention · user=%s not in whitelist", user)
+            client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text="Sorry, you're not authorized to use Agent Orange.",
+            )
+            return
         if not text:
             client.chat_postMessage(
                 channel=channel,
@@ -113,11 +146,20 @@ def build_slack_app() -> App:
 
         channel = event["channel"]
         thread_ts = event.get("thread_ts")
+        user = event.get("user")
 
         if channel_type == "im":
             thread_ts = thread_ts or event["ts"]
             logger.info("dm · channel=%s thread=%s user=%s text=%r",
-                        channel, thread_ts, event.get("user"), text[:120])
+                        channel, thread_ts, user, text[:120])
+            if not is_allowed(user):
+                logger.info("blocked dm · user=%s not in whitelist", user)
+                client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=thread_ts,
+                    text="Sorry, you're not authorized to use Agent Orange.",
+                )
+                return
             answer(
                 question=clean_text(text),
                 channel=channel,
@@ -133,7 +175,10 @@ def build_slack_app() -> App:
             logger.debug("channel thread reply skip · no prior state for %s", key)
             return
         logger.info("thread reply · channel=%s thread=%s user=%s text=%r",
-                    channel, thread_ts, event.get("user"), text[:120])
+                    channel, thread_ts, user, text[:120])
+        if not is_allowed(user):
+            logger.info("blocked thread reply · user=%s not in whitelist", user)
+            return
         answer(
             question=clean_text(text),
             channel=channel,
