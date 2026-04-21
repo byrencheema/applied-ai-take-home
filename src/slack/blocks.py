@@ -6,25 +6,19 @@ SECTION_LIMIT = 2900
 
 
 def section_blocks(text: str) -> list[dict[str, Any]]:
-    """One section block per paragraph (blank-line separated) so Slack renders
-    real spacing between them; slackify_markdown collapses `\\n\\n` to `\\n`
-    inside a single block, so a blank-line separated answer would otherwise
-    arrive as one visual paragraph. Each paragraph is still split under Slack's
-    3000-char section limit."""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()] or [text]
+    """Split text into section blocks under Slack's 3000-char section limit."""
     chunks: list[str] = []
-    for para in paragraphs:
-        remaining = para
-        while len(remaining) > SECTION_LIMIT:
-            cut = remaining.rfind("\n", 0, SECTION_LIMIT)
-            if cut == -1:
-                cut = remaining.rfind(" ", 0, SECTION_LIMIT)
-            if cut == -1:
-                cut = SECTION_LIMIT
-            chunks.append(remaining[:cut].rstrip())
-            remaining = remaining[cut:].lstrip()
-        if remaining:
-            chunks.append(remaining)
+    remaining = text
+    while len(remaining) > SECTION_LIMIT:
+        cut = remaining.rfind("\n", 0, SECTION_LIMIT)
+        if cut == -1:
+            cut = remaining.rfind(" ", 0, SECTION_LIMIT)
+        if cut == -1:
+            cut = SECTION_LIMIT
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
     return [{"type": "section", "text": {"type": "mrkdwn", "text": c}} for c in chunks]
 
 
