@@ -1,14 +1,14 @@
-"""Tiny REPL to chat with the agent. Reuses one thread_id so multi-turn works.
+"""Local terminal REPL for iterating without Slack.
 
 Usage:
-    uv run python -m scripts.ask
-    uv run python -m scripts.ask "one-shot question"
+    uv run ask                 # interactive loop
+    uv run ask "question"      # one-shot
 """
 import sys
 
 from dotenv import load_dotenv
 
-from src.agent import build_agent
+from ..agent import build_agent
 
 load_dotenv()
 

@@ -15,11 +15,12 @@ cp .env.example .env   # then fill in the tokens
 ## Run
 
 ```bash
-uv run python -m scripts.run_slack        # Slack bot (Socket Mode)
-uv run python -m scripts.ask              # local REPL, no Slack
-uv run python -m scripts.ask "question"   # one-shot
-uv run python -m evals.eval               # eval suite (logs to evals/runs/)
-uv run pytest                             # unit tests
+uv run slack-agent              # Slack bot (Socket Mode) — the production entry
+uv run ask                      # local REPL, no Slack — for prompt iteration
+uv run ask "question"           # one-shot, prints the final answer
+uv run trace "question"         # prints the full message trajectory — for debugging
+uv run python -m evals.eval     # eval suite, writes to evals/runs/ (gitignored)
+uv run pytest                   # unit tests
 ```
 
 In Slack: DM the bot, open an Assistant thread with it, or `@`-mention it in a
@@ -34,8 +35,23 @@ Socket Mode.
 
 ## Layout
 
-- `src/agent.py`: plan, research, answer graph.
-- `src/tools.py`: FTS5 search, artifact fetch, customer enumerate/profile.
-- `src/slack_app.py`: Bolt handlers.
-- `scripts/run_slack.py`: Socket Mode entry.
-- `evals/cases.py` + `evals/eval.py`: eval harness. Runs written to `evals/runs/` (gitignored).
+```
+src/
+  agent.py            plan → research → answer LangGraph + prompts
+  tools.py            FTS5 search, artifact fetch, customer enumerate/profile
+  db.py               sqlite connection helper
+  slack/              Bolt surface
+    __init__.py         build_slack_app() — wires events to runner
+    runner.py           placeholder → status → final answer flow
+    status.py           in-place status message
+    blocks.py           Block Kit builders
+    format.py           string helpers and tool-call labels
+  cli/                entry points (see pyproject.toml [project.scripts])
+    slack.py            uv run slack-agent
+    ask.py              uv run ask
+    trace.py            uv run trace
+evals/                evaluation harness (cases + runner; runs/ is gitignored)
+tests/                unit tests
+data/                 runtime state (feedback.jsonl) — gitignored
+docs/                 take-home instructions + progress log
+```

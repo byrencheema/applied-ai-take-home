@@ -1,18 +1,18 @@
-"""Run one question and print the full message trajectory — every tool call, every tool result, every model turn.
+"""Run one question and print the full message trajectory for debugging.
 
 Usage:
-    uv run python -m scripts.trace "your question here"
+    uv run trace "your question here"
 """
 import sys
 import textwrap
 
 from dotenv import load_dotenv
 
-from src.agent import build_agent
+from ..agent import build_agent
 
 load_dotenv()
 
-TRUNC = 600  # per-field character cap in the printout
+TRUNC = 600
 
 
 def short(s: str, n: int = TRUNC) -> str:

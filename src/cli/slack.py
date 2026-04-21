@@ -1,7 +1,7 @@
 """Run the Slack bot in Socket Mode.
 
 Usage:
-    uv run python -m scripts.run_slack
+    uv run slack-agent
 
 Requires SLACK_BOT_TOKEN (xoxb-) and SLACK_APP_TOKEN (xapp-) in .env.
 """
@@ -14,7 +14,7 @@ load_dotenv()
 
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from src.slack_app import build_slack_app
+from ..slack import build_slack_app
 
 logging.basicConfig(
     level=logging.INFO,
