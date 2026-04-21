@@ -20,6 +20,7 @@ dev = [
 slack-agent = "src.cli.slack:main"
 ask = "src.cli.ask:main"
 trace = "src.cli.trace:main"
+evals = "evals.eval:main"
 
 [build-system]
 requires = ["hatchling"]

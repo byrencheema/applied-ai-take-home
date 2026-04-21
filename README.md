@@ -50,7 +50,8 @@ uv run slack-agent              # Slack bot (Socket Mode), the production entry
 uv run ask                      # local REPL, no Slack
 uv run ask "question"           # one-shot, prints the final answer
 uv run trace "question"         # full message trajectory for debugging
-uv run python -m evals.eval     # eval suite, writes to evals/runs/
+uv run evals                    # eval suite (all cases), writes to evals/runs/
+uv run evals Q1 H3              # eval a subset by case-id prefix
 uv run pytest                   # unit tests
 ```
 
