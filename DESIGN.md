@@ -96,7 +96,7 @@ That said, if someone sets this up and invites the bot to a shared workspace, an
 
 ## What I would do next
 
-- Multi run eval stability. The suite holds 18 of 18 on good runs and 16 of 18 on bad ones with no code changes, which is temperature variance on the stubborn cases. If I ran each case several times and reported pass rate instead of pass or fail, I could actually tell real regressions from noise, and I could reopen the parallel tool call experiment with confidence.
+
 - Retrying streaming. The `streaming_mode_mismatch` path was not fully debugged, and with more care around the initial `chat.startStream` shape it might be possible to get the task card UI back without the reliability hit. Token streaming alone would help perceived latency on the longer answers.
 - Real access control. `SLACK_ALLOWED_USERS` is a band aid. For any real deployment I would want per user rate limits, an audit log, and probably a per workspace OAuth install so multiple teams could safely use the same hosted instance.
 - Feedback driven eval growth. `data/feedback.jsonl` is already collecting thumbs, but nothing is reading it. The natural next step is a job that pulls the thumbs down threads, replays the question with trace, and suggests new eval cases from the failures.
