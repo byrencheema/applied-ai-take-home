@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "Agent Orange",
-    "description": "Ask questions about Northstar customers: tickets, calls, internal docs, competitor research.",
+    "description": "Agent Orange: your Q&A agent for Northstar customer artifacts (tickets, calls, internal docs, competitor research).",
     "background_color": "#1f2d3d"
   },
   "features": {
@@ -15,7 +15,7 @@
       "always_online": true
     },
     "assistant_view": {
-      "assistant_description": "Research assistant over Northstar customer artifacts.",
+      "assistant_description": "Agent Orange, your research assistant over Northstar customer artifacts.",
       "suggested_prompts": [
         {
           "title": "BlueHarbor proof plan",
